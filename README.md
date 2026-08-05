@@ -86,10 +86,11 @@ a moving tag turns "which environment did that run train in?" into an unanswerab
 
 ## Gotchas worth knowing before you edit this
 
-- **The package must be public.** GHCR packages pushed from a private repo default to private, and
-  RunPod cannot pull one without registry credentials attached to a template. The symptom of
-  getting this wrong is not an auth error — the pod is created, bills, and simply never accepts
-  SSH. Check package visibility first.
+- **The package must be public.** It inherits this repo's visibility on first push, so it already
+  is — but a package pushed from a *private* repo defaults to private, and RunPod cannot pull one
+  without registry credentials attached to a template. The symptom of getting this wrong is not an
+  auth error: the pod is created, bills, and simply never accepts SSH. Check visibility first when
+  that happens.
 - **`import unsloth_zoo` needs a GPU, twice over.** Its `__init__` evaluates
   `device_type.get_device_type()` at module scope *and* refuses to import outside of `unsloth` (an
   `UNSLOTH_IS_PRESENT` check). Both are under one `if not _SKIP_GPU_INIT` block, so
