@@ -1,0 +1,7 @@
+# build_env.sh runs inside a Linux container. Checked out with CRLF on a Windows clone it reaches
+# the build context with \r line endings and bash fails on the first line — so pin LF regardless
+# of the platform, which is what makes the documented local `docker buildx build .` work here too.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
