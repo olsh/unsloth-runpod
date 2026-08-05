@@ -76,16 +76,21 @@ uv pip install --python "$PY" gguf protobuf sentencepiece mistral_common
 # llama-quantize + a converter script at the folder root, plus either a src/ggml/common checkout or
 # an UNSLOTH_PREBUILT_INFO.json marker). Anything hand-rolled risks being re-downloaded anyway.
 # gpu_support=False matches what save_pretrained_gguf itself passes; llama-quantize is CPU-only, so
-# the BUILD needs no GPU. But `import unsloth_zoo` does: its __init__ runs
-# device_type.get_device_type() at module scope and raises "Unsloth cannot find any torch
-# accelerator? You need a GPU." on a builder. UNSLOTH_ALLOW_CPU=1 is upstream's own escape hatch for
-# exactly this (device_type.py: "Test-only CPU fallback"), and it is scoped to these two commands
-# ONLY — exported globally it would let some later step quietly believe it had a GPU.
+# the BUILD needs no GPU. Importing unsloth_zoo does, though — twice over. Its __init__ evaluates
+# device_type.get_device_type() at module scope ("Unsloth cannot find any torch accelerator? You
+# need a GPU.") and then refuses to be imported outside of unsloth ("Please install Unsloth via
+# `pip install unsloth`!", an UNSLOTH_IS_PRESENT check). Both live under one `if not _SKIP_GPU_INIT`
+# block, and UNSLOTH_ZOO_DISABLE_GPU_INIT=1 is upstream's own opt-in for precisely this shape of
+# caller — a "download-only helper child" that skips the heavy torch/transformers/device init it
+# never uses. UNSLOTH_ALLOW_CPU=1 rides along to cover any device probe reached lazily rather than
+# at import. Both are scoped to these two commands, never exported: globally set, a later step could
+# quietly believe it had a GPU.
 # This also hydrates the bundled converter, which stops export fetching convert_hf_to_gguf.py.
-UNSLOTH_ALLOW_CPU=1 "$PY" -c "from unsloth_zoo.llama_cpp import install_llama_cpp; install_llama_cpp(gpu_support=False, print_output=True)"
+ZOO_ENV=(UNSLOTH_ZOO_DISABLE_GPU_INIT=1 UNSLOTH_ALLOW_CPU=1)
+env "${ZOO_ENV[@]}" "$PY" -c "from unsloth_zoo.llama_cpp import install_llama_cpp; install_llama_cpp(gpu_support=False, print_output=True)"
 # Fail the build if Unsloth can't detect what Unsloth just installed — otherwise the prebake is
 # dead weight that every pod silently redoes, and nobody finds out.
-UNSLOTH_ALLOW_CPU=1 "$PY" -c "from unsloth_zoo.llama_cpp import check_llama_cpp; print('llama.cpp detected:', check_llama_cpp())"
+env "${ZOO_ENV[@]}" "$PY" -c "from unsloth_zoo.llama_cpp import check_llama_cpp; print('llama.cpp detected:', check_llama_cpp())"
 
 # The fingerprint. `pins` is the CONTRACT: the consumer compares it byte-for-byte against its own
 # pins.json and refuses to train on a mismatch, which is what makes "the image silently trains on
