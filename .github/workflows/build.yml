@@ -1,0 +1,165 @@
+name: build
+
+# Manual for a pin bump, weekly so the floating unsloth/unsloth_zoo don't go stale in the image.
+# The inputs default to pins.json, so the scheduled run rebuilds today's pin set with whatever
+# unsloth is current; a one-off can override any of them without a commit.
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: CPython version for the venv
+        default: ""
+      torch_spec:
+        description: torch requirement specifier (e.g. 2.10.*)
+        default: ""
+      torch_backend:
+        description: uv --torch-backend (explicit; `auto` cannot work without a GPU)
+        default: ""
+      causal_conv1d_wheel:
+        description: prebuilt causal-conv1d wheel URL
+        default: ""
+      flash_attn_wheel:
+        description: prebuilt flash-attn (FA2) wheel URL
+        default: ""
+      base_image:
+        description: base image to derive from
+        default: ""
+  schedule:
+    - cron: "0 4 * * 1"   # Mondays 04:00 UTC
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve pins (inputs override pins.json)
+        id: pins
+        # Inputs reach the script through env, never interpolated into it: a `${{ }}` expansion
+        # inside a run block is a shell-injection seam, and these are free-text URLs.
+        env:
+          IN_PYTHON: ${{ inputs.python_version }}
+          IN_TORCH: ${{ inputs.torch_spec }}
+          IN_BACKEND: ${{ inputs.torch_backend }}
+          IN_CC1D: ${{ inputs.causal_conv1d_wheel }}
+          IN_FA: ${{ inputs.flash_attn_wheel }}
+          IN_BASE: ${{ inputs.base_image }}
+          DEFAULT_BASE: runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+        run: |
+          set -euo pipefail
+          # An overridden pin has to reach pins.json too: the file is COPY'd into the image and
+          # becomes the fingerprint the consumer compares against, so a build whose ARGs and
+          # pins.json disagreed would ship an image that lies about itself.
+          jq --arg py "$IN_PYTHON" --arg t "$IN_TORCH" --arg tb "$IN_BACKEND" \
+             --arg cc "$IN_CC1D" --arg fa "$IN_FA" '
+               (if $py != "" then .python = $py else . end)
+             | (if $t  != "" then .torch = $t else . end)
+             | (if $tb != "" then .torch_backend = $tb else . end)
+             | (if $cc != "" then .wheels.causal_conv1d = $cc else . end)
+             | (if $fa != "" then .wheels.flash_attn = $fa else . end)
+             ' pins.json > pins.resolved.json
+          mv pins.resolved.json pins.json
+          {
+            echo "python_version=$(jq -r .python pins.json)"
+            echo "torch_spec=$(jq -r .torch pins.json)"
+            echo "torch_backend=$(jq -r .torch_backend pins.json)"
+            echo "causal_conv1d_wheel=$(jq -r .wheels.causal_conv1d pins.json)"
+            echo "flash_attn_wheel=$(jq -r .wheels.flash_attn pins.json)"
+            echo "base_image=${IN_BASE:-$DEFAULT_BASE}"
+            echo "hash=$(sha256sum pins.json | cut -c1-8)"
+          } >> "$GITHUB_OUTPUT"
+          cat pins.json
+
+      - name: Tag
+        id: tag
+        run: |
+          echo "tag=$(date -u +%Y-%m-%d)-${{ steps.pins.outputs.hash }}" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # Disk is the binding constraint, not time. A hosted runner has ~21 GB free on / (which is
+      # where /var/lib/docker lives) while the base image alone extracts to ~20-24 GB. BOTH steps
+      # are needed: the cleanup frees ~25-30 GB on /, and the data-root move puts the image store
+      # AND BuildKit's snapshots (the docker-container driver keeps its state under the daemon's
+      # data-root) on /mnt, which has ~65 GB.
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: false
+
+      - name: Move the Docker data-root to /mnt
+        run: |
+          set -euo pipefail
+          sudo systemctl stop docker docker.socket
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info --format 'data-root: {{.DockerRootDir}}'
+          df -h / /mnt
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No cache-from/to: type=gha. Deliberate, not an oversight — the Actions cache is capped at
+      # 10 GB per repo against a ~15 GB image, the build is a linear pull-then-one-RUN with nothing
+      # to reuse across pin bumps, and a weekly cadence would evict it anyway.
+      #
+      # provenance/sbom OFF is load-bearing: attestations turn the push into a multi-platform index
+      # and reshape the manifest, which costs the base layers their identity with the image RunPod
+      # machines already cache. Lose that and every pod pays a full cold pull — the opposite of the
+      # point. Leave compression at the default gzip for the same reason.
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          push: true
+          provenance: false
+          sbom: false
+          tags: ghcr.io/${{ github.repository_owner }}/unsloth-runpod:${{ steps.tag.outputs.tag }}
+          build-args: |
+            BASE_IMAGE=${{ steps.pins.outputs.base_image }}
+            PYTHON_VERSION=${{ steps.pins.outputs.python_version }}
+            TORCH_SPEC=${{ steps.pins.outputs.torch_spec }}
+            TORCH_BACKEND=${{ steps.pins.outputs.torch_backend }}
+            CAUSAL_CONV1D_WHEEL=${{ steps.pins.outputs.causal_conv1d_wheel }}
+            FLASH_ATTN_WHEEL=${{ steps.pins.outputs.flash_attn_wheel }}
+            IMAGE_REF=ghcr.io/${{ github.repository_owner }}/unsloth-runpod:${{ steps.tag.outputs.tag }}
+            RUN_URL=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            BUILT_AT=${{ steps.tag.outputs.built_at }}
+
+      - name: Summary
+        run: |
+          IMG="ghcr.io/${{ github.repository_owner }}/unsloth-runpod:${{ steps.tag.outputs.tag }}"
+          {
+            echo "## Image published"
+            echo
+            echo '```'
+            echo "$IMG"
+            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Paste that tag into the consumer's \`IMAGE\` constant."
+            echo
+            echo "### Baked pin set"
+            echo '```json'
+            cat pins.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
