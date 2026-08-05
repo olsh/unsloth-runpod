@@ -76,12 +76,16 @@ uv pip install --python "$PY" gguf protobuf sentencepiece mistral_common
 # llama-quantize + a converter script at the folder root, plus either a src/ggml/common checkout or
 # an UNSLOTH_PREBUILT_INFO.json marker). Anything hand-rolled risks being re-downloaded anyway.
 # gpu_support=False matches what save_pretrained_gguf itself passes; llama-quantize is CPU-only, so
-# no GPU is needed at build time. This also hydrates the bundled converter, which stops the export
-# fetching convert_hf_to_gguf.py over the network.
-"$PY" -c "from unsloth_zoo.llama_cpp import install_llama_cpp; install_llama_cpp(gpu_support=False, print_output=True)"
+# the BUILD needs no GPU. But `import unsloth_zoo` does: its __init__ runs
+# device_type.get_device_type() at module scope and raises "Unsloth cannot find any torch
+# accelerator? You need a GPU." on a builder. UNSLOTH_ALLOW_CPU=1 is upstream's own escape hatch for
+# exactly this (device_type.py: "Test-only CPU fallback"), and it is scoped to these two commands
+# ONLY — exported globally it would let some later step quietly believe it had a GPU.
+# This also hydrates the bundled converter, which stops export fetching convert_hf_to_gguf.py.
+UNSLOTH_ALLOW_CPU=1 "$PY" -c "from unsloth_zoo.llama_cpp import install_llama_cpp; install_llama_cpp(gpu_support=False, print_output=True)"
 # Fail the build if Unsloth can't detect what Unsloth just installed — otherwise the prebake is
 # dead weight that every pod silently redoes, and nobody finds out.
-"$PY" -c "from unsloth_zoo.llama_cpp import check_llama_cpp; print('llama.cpp detected:', check_llama_cpp())"
+UNSLOTH_ALLOW_CPU=1 "$PY" -c "from unsloth_zoo.llama_cpp import check_llama_cpp; print('llama.cpp detected:', check_llama_cpp())"
 
 # The fingerprint. `pins` is the CONTRACT: the consumer compares it byte-for-byte against its own
 # pins.json and refuses to train on a mismatch, which is what makes "the image silently trains on
