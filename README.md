@@ -90,6 +90,12 @@ a moving tag turns "which environment did that run train in?" into an unanswerab
   RunPod cannot pull one without registry credentials attached to a template. The symptom of
   getting this wrong is not an auth error — the pod is created, bills, and simply never accepts
   SSH. Check package visibility first.
+- **`import unsloth_zoo` needs a GPU, twice over.** Its `__init__` evaluates
+  `device_type.get_device_type()` at module scope *and* refuses to import outside of `unsloth` (an
+  `UNSLOTH_IS_PRESENT` check). Both are under one `if not _SKIP_GPU_INIT` block, so
+  `UNSLOTH_ZOO_DISABLE_GPU_INIT=1` — upstream's opt-in for a "download-only helper child" — clears
+  them; `UNSLOTH_ALLOW_CPU=1` alone clears only the first. Scoped to the llama.cpp commands, never
+  exported.
 - **`--torch-backend=auto` cannot work at build time.** It detects CUDA from the driver, and a
   Docker build has no GPU, so it resolves a CPU-only torch that fails much later. The backend is
   always explicit here.
