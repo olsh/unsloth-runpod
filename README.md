@@ -16,9 +16,9 @@ data, no model weights — so it is usable by anything that wants this stack on 
 
 | | |
 |---|---|
-| Base | `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` (CUDA 12.8) |
+| Base | `runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404` (CUDA 12.8) — a workflow input, **not** part of the pin set, so it is absent from the fingerprint |
 | venv | `/opt/venv` — **not** `/workspace`, which the pod volume mounts over |
-| Packages | `unsloth`, `torch` (pinned), `flash-linear-attention`, the two prebuilt CUDA wheels, the GGUF converter's deps |
+| Packages | `pins.json`'s `packages` array (`unsloth`, `flash-linear-attention`) resolved in ONE `uv pip install` together with the pinned `torch`, then the two prebuilt CUDA wheels and `converter_deps` |
 | llama.cpp | prebuilt at `/root/.unsloth/llama.cpp`, installed via Unsloth's own installer so Unsloth detects it |
 | Fingerprint | `/opt/venv/.venv-pins.json` |
 | Bytecode | precompiled (`UV_COMPILE_BYTECODE=1`) — `uv` skips this by default, which otherwise costs minutes on first import, on the clock |

@@ -9,7 +9,19 @@
 # warm machine only has to fetch the layers this file adds. That property is fragile — see the
 # `provenance: false` / `sbom: false` note in .github/workflows/build.yml — and it is the whole
 # reason a bigger base beats a smaller one here.
-ARG BASE_IMAGE=runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+#
+# STAY ON cu1281. `1.1.0-cu1300-torch291-ubuntu2404` exists, but cu128 wheels run on a 12.8 OR a
+# 13.0 host driver, while a cu1300 base narrows pod scheduling to CUDA-13 hosts only — where A5000
+# stock is Low. That buys nothing while the venv's wheels are cu128, and costs out-of-stock retries.
+# The baked torch (2.8.0) is discarded by build_env.sh either way; what this tag actually decides is
+# the CUDA runtime, Ubuntu/glibc, and the base's uv + sshd setup. Ubuntu 24.04 is the newest
+# runpod/pytorch offers — there is no ubuntu2604 tag.
+#
+# NOTE this is NOT part of the pin set: BASE_IMAGE never enters pins.json, so it is absent from the
+# fingerprint and a base change is invisible to the consumer's verify_baked_env(). The image TAG's
+# date is the only evidence of which base an image carries. The workflow's DEFAULT_BASE is what the
+# weekly cron uses, so this default and that one must move together.
+ARG BASE_IMAGE=runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404
 FROM ${BASE_IMAGE}
 
 # The pin set. Defaults live in pins.json and are passed in by the workflow; overriding them on

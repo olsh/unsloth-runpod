@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Everything the image bakes, in ONE layer. Kept out of the Dockerfile so it stays readable and so
-# it can be diffed against the consumer's from-scratch install script (skull's build_setup_script),
-# which must install the same set the same way — an image that differs from its own fallback path
-# is an environment nobody described.
+# Everything the image bakes, in ONE layer. Kept out of the Dockerfile so it stays readable, and
+# because it is the ONLY definition of this environment: the consumer's from-scratch install path
+# was deleted with issue #67, deliberately, so there is nothing to diff against and nothing to keep
+# in step. What this file installs is what a pod gets.
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
@@ -23,9 +23,10 @@ PY="$VENV/bin/python"
 
 # Build tools stay in the image even though llama.cpp is prebaked below: the source-build fallback
 # has to keep working if a future Unsloth stops shipping a prebuilt bundle, and having them here
-# removes an apt-mirror outage from the failure surface of every training run.
+# removes an apt-mirror outage from the failure surface of every training run. jq is here for a
+# different reason — it is what reads the package lists out of pins.json below.
 apt-get update -qq
-apt-get install -y -qq build-essential cmake git curl
+apt-get install -y -qq build-essential cmake git curl jq
 rm -rf /var/lib/apt/lists/*
 
 # The RunPod base images ship uv at /bin/uv; the installer is the fallback if that ever changes.
@@ -37,18 +38,29 @@ fi
 
 uv venv "$VENV" --python "${PYTHON_VERSION}"
 
-# --torch-backend is EXPLICIT, never `auto`, and this is the one place the two must differ: `auto`
-# detects CUDA from the *driver*, and a Docker build has no GPU, so `auto` here silently resolves a
-# CPU-only torch that then fails on the pod at the worst possible moment. The consumer's on-pod
-# install can (and does) use `auto`, because there a driver is present.
-uv pip install --python "$PY" unsloth "torch==${TORCH_SPEC}" --torch-backend="${TORCH_BACKEND}"
+# The package set is READ FROM pins.json, not spelled here. That array rides into the fingerprint
+# the consumer compares against, so it has always LOOKED like a contract — but the list used to be
+# hardcoded below, which made it inert: adding `unsloth==X` to pins.json would have changed the tag
+# hash and forced a rebuild while the image kept installing an unpinned unsloth, i.e. a fingerprint
+# asserting a pin that nothing enforced. Now the array is the thing that installs.
+# Today it is `unsloth` (which pulls unsloth_zoo, transformers, peft, trl, hf_hub transitively) and
+# `flash-linear-attention` — the fast linear-attention kernels for Qwen3.5's GatedDeltaNet layers.
+mapfile -t PACKAGES < <(jq -r '.packages[]' /tmp/pins.json)
+[ "${#PACKAGES[@]}" -gt 0 ] || { echo "ERROR: pins.json declares no packages"; exit 1; }
 
-# Fast linear-attention kernels for Qwen3.5's GatedDeltaNet layers. NOTE the divergence from the
-# on-pod script, which treats this as best-effort: there, a transient failure must not waste a
-# billed pod, so it warns and falls through to the slow path. Here there is no such pressure, and
-# an image that quietly lacks the kernel would slow down every run it is used for — so it fails
-# the build instead.
-uv pip install --python "$PY" flash-linear-attention
+# ONE resolve for torch and every package, never a sequence of them. flash-linear-attention used to
+# be a second `uv pip install` on its own line, which gave it its own resolve and with it its own
+# chance to move torch out from under the ABI-pinned wheels below; resolving jointly turns that into
+# a build-time conflict instead of a silent runtime downgrade. The drift guard further down still
+# checks after the fact — this just stops it being the only thing that would notice.
+# Nothing here is best-effort: `set -e` means a failure fails the BUILD. That is deliberate for
+# flash-linear-attention in particular, which was best-effort back when it ran on a billed pod
+# (where a transient failure must not waste the rental). In CI there is no such pressure, and an
+# image quietly lacking the kernel would slow down every run made with it.
+# --torch-backend is EXPLICIT, never `auto`: `auto` detects CUDA from the *driver*, and a Docker
+# build has no GPU, so `auto` here silently resolves a CPU-only torch that then fails on the pod at
+# the worst possible moment.
+uv pip install --python "$PY" "${PACKAGES[@]}" "torch==${TORCH_SPEC}" --torch-backend="${TORCH_BACKEND}"
 
 # Both accelerator wheels are prebuilt for one exact torch+CUDA ABI, and their URLs are VERSION-
 # pinned, so they stay downloadable long after they stop matching — a stale pin installs silently
@@ -69,7 +81,11 @@ for WHEEL in "${CAUSAL_CONV1D_WHEEL}" "${FLASH_ATTN_WHEEL}"; do
 done
 
 # What Unsloth's GGUF converter shells out to install at export time if it isn't already present.
-uv pip install --python "$PY" gguf protobuf sentencepiece mistral_common
+# Read from pins.json for the same reason `packages` is, and with the same consequence: a name added
+# to `converter_deps` now changes the tag hash AND reaches the install, instead of only the former.
+mapfile -t CONVERTER_DEPS < <(jq -r '.converter_deps[]' /tmp/pins.json)
+[ "${#CONVERTER_DEPS[@]}" -gt 0 ] || { echo "ERROR: pins.json declares no converter_deps"; exit 1; }
+uv pip install --python "$PY" "${CONVERTER_DEPS[@]}"
 
 # llama.cpp, installed through Unsloth's OWN installer rather than by hand, because Unsloth decides
 # at export time whether an existing install counts — and its test is specific (a working
