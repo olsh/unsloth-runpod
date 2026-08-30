@@ -6,10 +6,10 @@ already installed — so a rented GPU starts training instead of spending ~9 min
 same Python environment from PyPI, every single run.
 
 ```
-ghcr.io/olsh/unsloth-runpod:<YYYY-MM-DD>-<pins-hash>
+docker.io/olsh/unsloth-runpod:<YYYY-MM-DD>-<pins-hash>
 ```
 
-Public image, no credentials needed. Nothing project-specific is baked in — no training code, no
+Public image. Nothing project-specific is baked in — no training code, no
 data, no model weights — so it is usable by anything that wants this stack on a pod.
 
 ## What's in it
@@ -78,19 +78,44 @@ docker buildx build . \
   --build-arg CAUSAL_CONV1D_WHEEL=… \
   --build-arg FLASH_ATTN_WHEEL=… \
   --provenance=false --sbom=false \
-  -t ghcr.io/olsh/unsloth-runpod:dev
+  -t docker.io/olsh/unsloth-runpod:dev
 ```
 
 Tags are immutable (`<date>-<sha8 of pins.json>`); there is deliberately **no `:latest`**, because
 a moving tag turns "which environment did that run train in?" into an unanswerable question.
 
+### Why Docker Hub, and why the puller must authenticate
+
+This built to `ghcr.io` until 2026-08-30. It moved because ghcr refuses pulls of an image this size
+often enough to break automated deployment, answering `429 Too Many Requests` /
+`toomanyrequests: retry-after: …` partway through a transfer. GitHub publishes **no** ghcr.io pull
+rate limit, so there is no budget to raise and no documented credential that raises one — and
+authenticating does not help: the refusals reproduce for an authenticated puller, including a
+GitHub-hosted Actions runner using its own `GITHUB_TOKEN`.
+
+Docker Hub's limits are published, and the decisive column is the **scope**, not the size:
+
+| user type | pull rate limit / 6 h |
+|---|---|
+| Business / Team / Pro (authenticated) | unlimited |
+| **Personal (authenticated)** | **200** |
+| unauthenticated | **100 per IPv4 address or IPv6 /64 subnet** |
+
+Anonymous is rationed *per address*, so a pod on a shared datacenter IP is rationed by strangers.
+Authenticated, the budget is per namespace and entirely yours — and Docker's own pull-attribution
+rules key on the **authenticated identity**, not on repository visibility, so a *public* image
+pulled with credentials still draws on the account budget. That is why this repo is public and the
+consumer still logs in: **a public image pulled anonymously buys nothing**, because it lands right
+back on the shared per-IP pool.
+
 ## Gotchas worth knowing before you edit this
 
-- **The package must be public.** It inherits this repo's visibility on first push, so it already
-  is — but a package pushed from a *private* repo defaults to private, and RunPod cannot pull one
-  without registry credentials attached to a template. The symptom of getting this wrong is not an
-  auth error: the pod is created, bills, and simply never accepts SSH. Check visibility first when
-  that happens.
+- **A pull the pod cannot make does not look like an auth error.** The pod is created, *bills*,
+  and simply never accepts SSH — so a consumer's "wait_for_ssh timed out" points nowhere near the
+  registry. Check the credential and the image's visibility first when that happens. Keeping the
+  Docker Hub repository **public** is deliberate: it is not what makes the image pullable (the
+  consumer authenticates either way, see above), it is that a Personal account gets exactly **one**
+  private repository, and a public image keeps an anonymous `docker pull` available for smoke tests.
 - **`import unsloth_zoo` needs a GPU, twice over.** Its `__init__` evaluates
   `device_type.get_device_type()` at module scope *and* refuses to import outside of `unsloth` (an
   `UNSLOTH_IS_PRESENT` check). Both are under one `if not _SKIP_GPU_INIT` block, so
