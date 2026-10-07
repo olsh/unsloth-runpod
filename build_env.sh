@@ -75,9 +75,25 @@ for WHEEL in "${CAUSAL_CONV1D_WHEEL}" "${FLASH_ATTN_WHEEL}"; do
     echo "       wheel: $WHEEL"
     exit 1
   fi
+  # The wheels come from Unsloth's `prebuilt-wheels-cu13` release, which is NOT immutable: an asset
+  # can be replaced under the same URL. So every pin carries `#sha256=<hex>` and the file is
+  # verified before it is installed — a missing fragment fails the build as surely as a mismatch,
+  # since a pin without one is exactly the drift this check exists to stop. The local file keeps the
+  # wheel's own basename because uv reads the version/ABI tags out of the filename.
+  URL="${WHEEL%%#*}"
+  SHA="${WHEEL##*#sha256=}"
+  if [ "$SHA" = "$WHEEL" ] || ! [[ "$SHA" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "ERROR: wheel pin carries no #sha256=<64 hex> fragment: $WHEEL"
+    exit 1
+  fi
+  FILE="/tmp/wheels/${URL##*/}"
+  mkdir -p /tmp/wheels
+  curl -fsSL --retry 5 --retry-all-errors -o "$FILE" "$URL"
+  echo "$SHA  $FILE" | sha256sum -c -
   # --only-binary :all: guarantees this never falls back to a source build (flash-attn from sdist
-  # is a 1–3 h CUDA compile).
-  uv pip install --python "$PY" --only-binary :all: "$WHEEL"
+  # is a 1–5 h CUDA compile).
+  uv pip install --python "$PY" --only-binary :all: "$FILE"
+  rm -f "$FILE"
 done
 
 # What Unsloth's GGUF converter shells out to install at export time if it isn't already present.

@@ -1,11 +1,11 @@
 {
   "python": "3.13",
-  "torch": "2.10.*",
-  "torch_backend": "cu128",
+  "torch": "2.14.*",
+  "torch_backend": "cu130",
   "packages": ["unsloth", "flash-linear-attention"],
   "wheels": {
-    "causal_conv1d": "https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.7.0/causal_conv1d-1.7.0+cu12torch2.10cxx11abiTRUE-cp313-cp313-linux_x86_64.whl",
-    "flash_attn": "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.1/flash_attn-2.8.1+cu12torch2.10cxx11abiTRUE-cp313-cp313-linux_x86_64.whl"
+    "causal_conv1d": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=ab41ee29fcc9a287eb5e1d5597553e2fc1d0bda6aa6ce4016e18875dd98544eb",
+    "flash_attn": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/flash_attn-2.8.4+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=1ee5716704aaca58eff25290f0e13775e3c0ae8305148f9fbd5a5287571d2127"
   },
   "converter_deps": ["gguf", "protobuf", "sentencepiece", "mistral_common"]
 }

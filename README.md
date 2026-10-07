@@ -16,9 +16,9 @@ data, no model weights — so it is usable by anything that wants this stack on 
 
 | | |
 |---|---|
-| Base | `runpod/pytorch:1.1.0-cu1281-torch280-ubuntu2404` (CUDA 12.8) — a workflow input, **not** part of the pin set, so it is absent from the fingerprint |
+| Base | `runpod/pytorch:1.4.0-cu1300-torch2130-ubuntu2404` (CUDA 13.0; refuses a 12.x host driver at container start) — a workflow input, **not** part of the pin set, so it is absent from the fingerprint |
 | venv | `/opt/venv` — **not** `/workspace`, which the pod volume mounts over |
-| Packages | `pins.json`'s `packages` array (`unsloth`, `flash-linear-attention`) resolved in ONE `uv pip install` together with the pinned `torch`, then the two prebuilt CUDA wheels and `converter_deps` |
+| Packages | `pins.json`'s `packages` array (`unsloth`, `flash-linear-attention`) resolved in ONE `uv pip install` together with the pinned `torch`, then the two prebuilt CUDA wheels (sha256-verified against the `#sha256=` fragment each pin carries) and `converter_deps` |
 | llama.cpp | prebuilt at `/root/.unsloth/llama.cpp`, installed via Unsloth's own installer so Unsloth detects it |
 | Fingerprint | `/opt/venv/.venv-pins.json` |
 | Bytecode | precompiled (`UV_COMPILE_BYTECODE=1`) — `uv` skips this by default, which otherwise costs minutes on first import, on the clock |
@@ -61,8 +61,8 @@ Rebuilds run on `workflow_dispatch` (inputs override `pins.json`) and weekly, so
 
 ```bash
 gh workflow run build.yml --repo olsh/unsloth-runpod \
-  -f torch_spec='2.10.*' \
-  -f flash_attn_wheel='https://github.com/Dao-AILab/flash-attention/releases/download/…'
+  -f torch_spec='2.14.*' \
+  -f flash_attn_wheel='https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/…#sha256=…'
 ```
 
 An overridden input is written back into the `pins.json` that gets baked, so the image's
@@ -73,8 +73,8 @@ Locally:
 ```bash
 docker buildx build . \
   --build-arg PYTHON_VERSION=3.13 \
-  --build-arg TORCH_SPEC='2.10.*' \
-  --build-arg TORCH_BACKEND=cu128 \
+  --build-arg TORCH_SPEC='2.14.*' \
+  --build-arg TORCH_BACKEND=cu130 \
   --build-arg CAUSAL_CONV1D_WHEEL=… \
   --build-arg FLASH_ATTN_WHEEL=… \
   --provenance=false --sbom=false \
