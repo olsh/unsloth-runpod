@@ -1,8 +1,10 @@
 name: build
 
-# Manual for a pin bump, weekly so the floating unsloth/unsloth_zoo don't go stale in the image.
-# The inputs default to pins.json, so the scheduled run rebuilds today's pin set with whatever
-# unsloth is current; a one-off can override any of them without a commit.
+# Manual only: run it for a pin bump, or to pick up a newer floating unsloth/unsloth_zoo before
+# adopting an image. There is no schedule — the consumer pins one tag and moves it by hand, so a
+# weekly rebuild produced images nobody ran. The inputs default to pins.json, so a bare dispatch
+# rebuilds today's pin set with whatever unsloth is current; a one-off can override any of them
+# without a commit.
 on:
   workflow_dispatch:
     inputs:
@@ -24,8 +26,6 @@ on:
       base_image:
         description: base image to derive from
         default: ""
-  schedule:
-    - cron: "0 4 * * 1"   # Mondays 04:00 UTC
 
 permissions:
   contents: read
@@ -53,8 +53,8 @@ jobs:
           IN_FA: ${{ inputs.flash_attn_wheel }}
           IN_BASE: ${{ inputs.base_image }}
           # Keep in step with the Dockerfile's ARG BASE_IMAGE default. THIS is the one that sticks:
-          # base_image is not in pins.json, so a one-off `-f base_image=...` would leave the weekly
-          # cron rebuilding on the old base forever. See the Dockerfile for why it is cu1300.
+          # base_image is not in pins.json, so a one-off `-f base_image=...` would leave every later
+          # bare dispatch building on the old base. See the Dockerfile for why it is cu1300.
           DEFAULT_BASE: runpod/pytorch:1.4.0-cu1300-torch2130-ubuntu2404
         run: |
           set -euo pipefail

@@ -56,8 +56,9 @@ liability. `resolved` is for diagnosing drift afterwards; log it.
 
 ## Building
 
-Rebuilds run on `workflow_dispatch` (inputs override `pins.json`) and weekly, so the floating
-`unsloth` / `unsloth_zoo` don't go stale:
+Rebuilds run on `workflow_dispatch` only (inputs override `pins.json`); there is no schedule.
+Dispatch one for a pin bump, or with no inputs to pick up a newer floating `unsloth` /
+`unsloth_zoo` before adopting an image:
 
 ```bash
 gh workflow run build.yml --repo olsh/unsloth-runpod \

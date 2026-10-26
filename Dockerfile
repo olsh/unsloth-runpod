@@ -23,8 +23,8 @@
 #
 # NOTE this is NOT part of the pin set: BASE_IMAGE never enters pins.json, so it is absent from the
 # fingerprint and a base change is invisible to the consumer's verify_baked_env(). The image TAG's
-# date is the only evidence of which base an image carries. The workflow's DEFAULT_BASE is what the
-# weekly cron uses, so this default and that one must move together.
+# date is the only evidence of which base an image carries. The workflow's DEFAULT_BASE is what a
+# bare dispatch uses, so this default and that one must move together.
 ARG BASE_IMAGE=runpod/pytorch:1.4.0-cu1300-torch2130-ubuntu2404
 FROM ${BASE_IMAGE}
 
