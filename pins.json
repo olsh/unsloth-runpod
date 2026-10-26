@@ -4,8 +4,8 @@
   "torch_backend": "cu130",
   "packages": ["unsloth", "flash-linear-attention"],
   "wheels": {
-    "causal_conv1d": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=ab41ee29fcc9a287eb5e1d5597553e2fc1d0bda6aa6ce4016e18875dd98544eb",
-    "flash_attn": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/flash_attn-2.8.4+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=1ee5716704aaca58eff25290f0e13775e3c0ae8305148f9fbd5a5287571d2127"
+    "causal_conv1d": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/causal_conv1d-1.7.0+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=315da0b92f1e75b78f9adbd812403547803b457a83f22e9f76536642faa25cf3",
+    "flash_attn": "https://github.com/unslothai/unsloth/releases/download/prebuilt-wheels-cu13/flash_attn-2.8.4+cu13torch2.14cxx11abiTRUE-cp313-cp313-linux_x86_64.whl#sha256=90adacd381fde9d286a93c0a9fcdb59452faa5f2910bc7214dd8a574a90ae723"
   },
   "converter_deps": ["gguf", "protobuf", "sentencepiece", "mistral_common"]
 }
